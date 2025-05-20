@@ -3,6 +3,7 @@ import { initTRPC } from '@trpc/server';
 import { z } from 'zod';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { Todo } from '$lib/server/db/mockDb'; // Import Todo type
+import { observable } from '@trpc/server/observable';
 
 export const t = initTRPC.context<Context>().create();
 
@@ -84,6 +85,24 @@ export const router = t.router({
 			.mutation(({ input: id, ctx: { db } }) =>
 				db.todo.delete({ where: { id } })
 			),
+	}),
+
+	onTimestamp: loggedProcedure.subscription(() => {
+		return observable<{ timestamp: number }>((emit) => {
+			let count = 0;
+			const interval = setInterval(() => {
+				count++;
+				emit.next({ timestamp: Date.now() });
+				if (count >= 10) {
+					clearInterval(interval);
+					emit.complete();
+				}
+			}, 1000);
+
+			return () => {
+				clearInterval(interval);
+			};
+		});
 	}),
 });
 
