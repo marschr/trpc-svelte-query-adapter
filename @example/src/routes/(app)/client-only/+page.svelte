@@ -4,11 +4,10 @@
 	import { X, Plus } from 'phosphor-svelte';
 
 	import { debounce } from '$lib/utils';
-	import { page } from '$app/stores';
-	import { trpc } from '$lib/trpc/client';
+	import { trpc } from '$lib/trpc/client.js';
 	import { writable } from 'svelte/store';
 
-	const api = trpc($page);
+	const api = trpc();
 	const utils = api.createUtils();
 
 	let todoInput: HTMLInputElement;
@@ -120,7 +119,7 @@
 
 		{#if $todos.isPending}
 			<article>
-				<progress />
+				<progress></progress>
 				Loading todos...
 			</article>
 		{:else if $todos.isError}
@@ -167,7 +166,7 @@
 			</div>
 		{/if}
 		{#if $createTodo.isPending || $deleteTodo.isPending || $updateTodo.isPending}
-			<progress />
+			<progress></progress>
 		{/if}
 	</div>
 
@@ -184,7 +183,7 @@
 
 		{#if $popularTodos.isPending || $popularTodos.isFetching}
 			<article>
-				<progress />
+				<progress></progress>
 				Loading popular todos...
 			</article>
 		{:else if $popularTodos.isError}

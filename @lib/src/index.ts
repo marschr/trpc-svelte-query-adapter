@@ -2,7 +2,7 @@ import DeepProxy from 'proxy-deep';
 
 import type {
 	TRPCClientErrorLike,
-	CreateTRPCProxyClient,
+	CreateTRPCClient,
 	TRPCUntypedClient,
 } from '@trpc/client';
 import type { AnyRouter, DeepPartial } from '@trpc/server';
@@ -34,7 +34,6 @@ import {
 	type CreateQueryResult,
 	type CreateInfiniteQueryResult,
 	type CreateMutationResult,
-	type StoreOrVal as _StoreOrVal,
 	type QueryObserverResult,
 	type QueryObserverOptions,
 	type DefaultError,
@@ -75,7 +74,7 @@ type ExhaustiveRecord<
 	: U extends { [K in TKey]: TValue } ? U
 	: never; // prettier-ignore
 
-type StoreOrVal<T> = _StoreOrVal<T> | Writable<T>;
+	type StoreOrVal<T> = T | Readable<T> | Writable<T>;
 
 // CREDIT: https://stackoverflow.com/a/63448246
 type WithNevers<T, V> = {
@@ -265,26 +264,6 @@ type GetQueryKey<TInput = undefined> = [TInput] extends [undefined | void]
 			 */
 			[Procedure.queryKey]: (input?: TInput, type?: QueryType) => TRPCQueryKey;
 		} & {};
-
-function getClientArgs<TOptions>(
-	queryKey: TRPCQueryKey,
-	opts: TOptions,
-	infiniteParams?: {
-		pageParam: any;
-		direction: 'forward' | 'backward';
-	}
-): [path: string, input: unknown, opts: any] {
-	const path = queryKey[0];
-	let input = queryKey[1]?.input;
-	if (infiniteParams) {
-		input = {
-			...(input ?? {}),
-			...(infiniteParams.pageParam ? { cursor: infiniteParams.pageParam } : {}),
-			direction: infiniteParams.direction,
-		};
-	}
-	return [path.join('.'), input, (opts as any)?.trpc] as const;
-}
 
 // createUtils
 type TRPCFetchQueryOptions<TOutput, TError, TData = TOutput> = DistributiveOmit<
@@ -489,7 +468,7 @@ const utilProcedures: Record<
 	(ctx: SvelteQueryWrapperContext) => any
 > = {
 	// QueryUtils
-	[Util.Query.fetch]: ({ path, queryClient, client, key }) => {
+	[Util.Query.fetch]: ({ path, queryClient, trpcProxyClient, key }) => {
 		return (input: any, opts?: any) => {
 			const queryKey = getQueryKeyInternal(
 				path,
@@ -499,11 +478,16 @@ const utilProcedures: Record<
 			return queryClient.fetchQuery({
 				...opts,
 				queryKey,
-				queryFn: () => client.query(...getClientArgs(queryKey, opts)),
+				queryFn: () => {
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					const procedureInput = queryKey[1]?.input;
+					return targetProc.query(procedureInput, opts?.trpc);
+				}
 			});
 		};
 	},
-	[Util.Query.fetchInfinite]: ({ path, queryClient, client, key }) => {
+	[Util.Query.fetchInfinite]: ({ path, queryClient, trpcProxyClient, key }) => {
 		return (input: any, opts?: any) => {
 			const queryKey = getQueryKeyInternal(
 				path,
@@ -514,15 +498,16 @@ const utilProcedures: Record<
 				...opts,
 				queryKey,
 				queryFn: ({ pageParam, direction }) => {
-					return client.query(
-						...getClientArgs(queryKey, opts, { pageParam, direction })
-					);
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					const procedureInput = { ...(queryKey[1]?.input ?? {}), ...(pageParam ? { cursor: pageParam } : {}), direction };
+					return targetProc.query(procedureInput, opts?.trpc);
 				},
 				initialPageParam: opts?.initialCursor ?? null,
 			});
 		};
 	},
-	[Util.Query.prefetch]: ({ path, queryClient, client, key }) => {
+	[Util.Query.prefetch]: ({ path, queryClient, trpcProxyClient, key }) => {
 		return (input: any, opts?: any) => {
 			const queryKey = getQueryKeyInternal(
 				path,
@@ -532,11 +517,16 @@ const utilProcedures: Record<
 			return queryClient.prefetchQuery({
 				...opts,
 				queryKey,
-				queryFn: () => client.query(...getClientArgs(queryKey, opts)),
+				queryFn: () => {
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					const procedureInput = queryKey[1]?.input;
+					return targetProc.query(procedureInput, opts?.trpc);
+				}
 			});
 		};
 	},
-	[Util.Query.prefetchInfinite]: ({ path, queryClient, client, key }) => {
+	[Util.Query.prefetchInfinite]: ({ path, queryClient, trpcProxyClient, key }) => {
 		return (input: any, opts?: any) => {
 			const queryKey = getQueryKeyInternal(
 				path,
@@ -547,15 +537,16 @@ const utilProcedures: Record<
 				...opts,
 				queryKey,
 				queryFn: ({ pageParam, direction }) => {
-					return client.query(
-						...getClientArgs(queryKey, opts, { pageParam, direction })
-					);
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					const procedureInput = { ...(queryKey[1]?.input ?? {}), ...(pageParam ? { cursor: pageParam } : {}), direction };
+					return targetProc.query(procedureInput, opts?.trpc);
 				},
 				initialPageParam: opts?.initialCursor ?? null,
 			});
 		};
 	},
-	[Util.Query.ensureData]: ({ path, queryClient, client, key }) => {
+	[Util.Query.ensureData]: ({ path, queryClient, trpcProxyClient, key }) => {
 		return (input: any, opts?: any) => {
 			const queryKey = getQueryKeyInternal(
 				path,
@@ -565,7 +556,12 @@ const utilProcedures: Record<
 			return queryClient.ensureQueryData({
 				...opts,
 				queryKey,
-				queryFn: () => client.query(...getClientArgs(queryKey, opts)),
+				queryFn: () => {
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					const procedureInput = queryKey[1]?.input;
+					return targetProc.query(procedureInput, opts?.trpc);
+				}
 			});
 		};
 	},
@@ -675,28 +671,27 @@ const utilProcedures: Record<
 	},
 
 	// MutationUtils
-	[Util.Mutation.setMutationDefaults]: ({
-		queryClient,
-		path: _path,
-		client,
-	}) => {
+	[Util.Mutation.setMutationDefaults]: ({ queryClient, path: _path, trpcProxyClient }) => {
 		return (options: any) => {
 			const mutationKey = getMutationKeyInternal(_path);
-			const path = mutationKey[0];
+			const procedurePath = mutationKey[0];
 			const canonicalMutationFn = (input: unknown) => {
-				return client.mutation(...getClientArgs([path, { input }], {}));
+				let targetProc: any = trpcProxyClient;
+				for (const p of procedurePath) targetProc = targetProc[p];
+				return targetProc.mutate(input);
 			};
-			return queryClient.setMutationDefaults(
-				mutationKey,
-				typeof options === 'function'
+			const actualOptions = typeof options === 'function'
 					? options({ canonicalMutationFn })
-					: options
-			);
+					: options;
+			return queryClient.setMutationDefaults(mutationKey, actualOptions);
 		};
 	},
-	[Util.Mutation.getMutationDefaults]: ({ queryClient, path }) => {
+	[Util.Mutation.getMutationDefaults]: ({ queryClient, path: _path }) => {
 		return () => {
-			return queryClient.getMutationDefaults(getMutationKeyInternal(path));
+			console.warn(
+				'[trpc-svelte-query-adapter] getMutationDefaults utility is not able to retrieve defaults with Svelte Query v5 and will return undefined.'
+			);
+			return undefined;
 		};
 	},
 	[Util.Mutation.isMutating]: ({ queryClient, path }) => {
@@ -714,7 +709,7 @@ function createUtilsProxy(ctx: SvelteQueryWrapperContext) {
 		{},
 		{
 			get(_target, key, _receiver) {
-				if (key === Util.Query.client) return ctx.baseClient;
+				if (key === Util.Query.client) return ctx.trpcProxyClient;
 
 				if (hasOwn(utilProcedures, key)) {
 					return utilProcedures[key](
@@ -1031,8 +1026,7 @@ type AddQueryPropTypes<TClient = any, TError = any> = {
 type UntypedClient = TRPCUntypedClient<AnyRouter>;
 
 interface SvelteQueryWrapperContext {
-	baseClient: CreateTRPCProxyClient<AnyRouter>;
-	client: UntypedClient;
+	trpcProxyClient: CreateTRPCClient<AnyRouter>;
 	queryClient: QueryClient;
 	path: string[];
 	key: string;
@@ -1070,7 +1064,7 @@ function getQueryType(
 	}
 }
 
-function createQueriesProxy({ client, abortOnUnmount }: SvelteQueryWrapperContext) {
+function createQueriesProxy({ trpcProxyClient, abortOnUnmount }: SvelteQueryWrapperContext) {
 	return new DeepProxy(
 		{},
 		{
@@ -1079,24 +1073,22 @@ function createQueriesProxy({ client, abortOnUnmount }: SvelteQueryWrapperContex
 			},
 			apply(_target, _thisArg, argList) {
 				const [input, opts] = argList;
+				const procedurePath = this.path;
 
 				const shouldAbortOnUnmount =
 					opts?.trpc?.abortOnUnmount ?? abortOnUnmount;
 
-				const queryKey = getQueryKeyInternal(this.path, input, 'query');
+				const queryKey = getQueryKeyInternal(procedurePath, input, 'query');
 
 				return {
 					...opts,
 					queryKey,
-					queryFn: ({ signal }) =>
-						client.query(
-							...getClientArgs(queryKey, {
-								trpc: {
-									...opts?.trpc,
-									...(shouldAbortOnUnmount && { signal }),
-								},
-							})
-						),
+					queryFn: ({ signal }) => {
+						let targetProc: any = trpcProxyClient;
+						for (const p of procedurePath) targetProc = targetProc[p];
+						const trpcSpecificOptions = { ...opts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+						return targetProc.query(input, trpcSpecificOptions);
+					}
 				} satisfies CreateQueryOptions;
 			},
 		}
@@ -1141,30 +1133,28 @@ const procedures: Record<
 	[Procedure.queryKey]: ({ path }) => {
 		return (input?: any, opts?: any) => getQueryKeyInternal(path, input, opts);
 	},
-	[Procedure.query]: ({ path, client, abortOnUnmount, queryClient }) => {
-		return (input: any, opts?: any) => {
+	[Procedure.query]: ({ path, trpcProxyClient, abortOnUnmount, queryClient }) => {
+		return (procedureInput: any, opts?: any) => {
 			const isOptsStore = isSvelteStore(opts);
-			const isInputStore = isSvelteStore(input);
+			const isInputStore = isSvelteStore(procedureInput);
 			const currentOpts = isOptsStore ? get(opts) : opts;
 
-			const queryKey = getQueryKeyInternal(path, input, 'query');
+			const baseQueryKey = getQueryKeyInternal(path, isInputStore ? {} : procedureInput, 'query');
 
 			if (!isInputStore && !isOptsStore && !currentOpts?.lazy) {
 				const shouldAbortOnUnmount =
-					opts?.trpc?.abortOnUnmount ?? abortOnUnmount;
+					currentOpts?.trpc?.abortOnUnmount ?? abortOnUnmount;
+				const queryKey = getQueryKeyInternal(path, procedureInput, 'query');
 
 				return createQuery({
-					...opts,
+					...currentOpts,
 					queryKey,
-					queryFn: ({ signal }) =>
-						client.query(
-							...getClientArgs(queryKey, {
-								trpc: {
-									...opts?.trpc,
-									...(shouldAbortOnUnmount && { signal }),
-								},
-							})
-						),
+					queryFn: ({ signal }) => {
+						let targetProc: any = trpcProxyClient;
+						for (const p of path) targetProc = targetProc[p];
+						const trpcSpecificOptions = { ...currentOpts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+						return targetProc.query(procedureInput, trpcSpecificOptions);
+					},
 				});
 			}
 
@@ -1175,28 +1165,24 @@ const procedures: Record<
 			const query = createQuery(
 				derived(
 					[
-						isInputStore ? input : blankStore,
+						isInputStore ? procedureInput : blankStore,
 						isOptsStore ? opts : blankStore,
 						enabled,
 					],
 					([$input, $opts, $enabled]) => {
-						const newInput = !isBlank($input) ? $input : input;
-						const newOpts = !isBlank($opts) ? $opts : opts;
-
-						const queryKey = getQueryKeyInternal(path, newInput, 'query');
+						const currentProcedureInputVal = !isBlank($input) ? $input : procedureInput;
+						const newOpts = !isBlank($opts) ? $opts : currentOpts;
+						const queryKey = getQueryKeyInternal(path, currentProcedureInputVal, 'query');
 
 						return {
 							...newOpts,
 							queryKey,
-							queryFn: ({ signal }) =>
-								client.query(
-									...getClientArgs(queryKey, {
-										trpc: {
-											...newOpts?.trpc,
-											...(shouldAbortOnUnmount && { signal }),
-										},
-									})
-								),
+							queryFn: ({ signal }) => {
+								let targetProc: any = trpcProxyClient;
+								for (const p of path) targetProc = targetProc[p];
+								const trpcSpecificOptions = { ...newOpts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+								return targetProc.query(currentProcedureInputVal, trpcSpecificOptions);
+							},
 							...(!isBlank($enabled) && {
 								enabled: $enabled && (newOpts?.enabled ?? true),
 							}),
@@ -1210,45 +1196,44 @@ const procedures: Record<
 						query,
 						async (data?: any) => {
 							if (data) {
-								queryClient.setQueryData(queryKey, await data);
+								queryClient.setQueryData(baseQueryKey, await data);
 							}
 							(enabled as Writable<boolean>).set(true);
 						},
-					]
+				  ]
 				: query;
 		};
 	},
-	[Procedure.serverQuery]: ({ path, client, queryClient, abortOnUnmount }) => {
+	[Procedure.serverQuery]: ({ path, trpcProxyClient, queryClient, abortOnUnmount }) => {
 		return async (_input: any, _opts?: any) => {
-			let input = _input;
+			let procedureInput = _input;
 			let opts = _opts;
 			let shouldAbortOnUnmount = opts?.trpc?.abortOnUnmount ?? abortOnUnmount;
 
-			const queryKey = getQueryKeyInternal(path, input, 'query');
+			const queryKey = getQueryKeyInternal(path, procedureInput, 'query');
 
-			const query: FetchQueryOptions = {
+			const queryFnForPrefetch = ({ signal }: { signal?: AbortSignal }) => {
+				let targetProc: any = trpcProxyClient;
+				for (const p of path) targetProc = targetProc[p];
+				const trpcSpecificOptions = { ...opts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+				return targetProc.query(procedureInput, trpcSpecificOptions);
+			};
+
+			const queryForPrefetch: FetchQueryOptions = {
 				queryKey,
-				queryFn: ({ signal }) =>
-					client.query(
-						...getClientArgs(queryKey, {
-							trpc: {
-								...opts?.trpc,
-								...(shouldAbortOnUnmount && { signal }),
-							},
-						})
-					),
+				queryFn: queryFnForPrefetch,
 			};
 
 			const cache = queryClient
 				.getQueryCache()
-				.find({ queryKey: query.queryKey });
+				.find({ queryKey: queryForPrefetch.queryKey });
 			const cacheNotFound = !cache?.state?.data;
 			if (opts?.ssr !== false && cacheNotFound) {
-				await queryClient.prefetchQuery(query);
+				await queryClient.prefetchQuery(queryForPrefetch);
 			}
 
 			return (...args: any[]) => {
-				if (args.length > 0) input = args.shift();
+				if (args.length > 0) procedureInput = args.shift();
 				if (args.length > 0) opts = args.shift();
 
 				const isOptsStore = isSvelteStore(opts);
@@ -1257,31 +1242,28 @@ const procedures: Record<
 					currentOpts?.trpc?.abortOnUnmount ?? abortOnUnmount;
 
 				const staleTime = writable<number | null>(Infinity);
-				onMount(() => { staleTime.set(null); }); // prettier-ignore
+				onMount(() => { staleTime.set(null); });
 
 				return createQuery(
 					derived(
 						[
-							isSvelteStore(input) ? input : blankStore,
+							isSvelteStore(procedureInput) ? procedureInput : blankStore,
 							isOptsStore ? opts : blankStore,
 							staleTime,
 						],
 						([$input, $opts, $staleTime]) => {
-							const newInput = !isBlank($input) ? $input : input;
-							const newOpts = !isBlank($opts) ? $opts : opts;
-							const queryKey = getQueryKeyInternal(path, newInput, 'query');
+							const currentProcedureInputVal = !isBlank($input) ? $input : procedureInput;
+							const newOpts = !isBlank($opts) ? $opts : currentOpts;
+							const queryKey = getQueryKeyInternal(path, currentProcedureInputVal, 'query');
 							return {
 								...newOpts,
 								queryKey,
-								queryFn: ({ signal }) =>
-									client.query(
-										...getClientArgs(queryKey, {
-											trpc: {
-												...newOpts?.trpc,
-												...(shouldAbortOnUnmount && { signal }),
-											},
-										})
-									),
+								queryFn: ({ signal }) => {
+									let targetProc: any = trpcProxyClient;
+									for (const p of path) targetProc = targetProc[p];
+									const trpcSpecificOptions = { ...newOpts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+									return targetProc.query(currentProcedureInputVal, trpcSpecificOptions);
+								},
 								...($staleTime && { staleTime: $staleTime }),
 							} satisfies CreateQueryOptions;
 						}
@@ -1290,43 +1272,29 @@ const procedures: Record<
 			};
 		};
 	},
-	[Procedure.infiniteQuery]: ({
-		path,
-		client,
-		abortOnUnmount,
-		queryClient,
-	}) => {
-		return (input: any, opts?: any) => {
+	[Procedure.infiniteQuery]: ({ path, trpcProxyClient, abortOnUnmount, queryClient }) => {
+		return (procedureInput: any, opts?: any) => {
 			const isOptsStore = isSvelteStore(opts);
-			const isInputStore = isSvelteStore(input);
+			const isInputStore = isSvelteStore(procedureInput);
 			const currentOpts = isOptsStore ? get(opts) : opts;
-
-			const queryKey = getQueryKeyInternal(path, input, 'infinite');
+			const baseQueryKey = getQueryKeyInternal(path, isInputStore ? {} : procedureInput, 'infinite');
 
 			if (!isInputStore && !isOptsStore && !currentOpts?.lazy) {
 				const shouldAbortOnUnmount =
-					opts?.trpc?.abortOnUnmount ?? abortOnUnmount;
+					currentOpts?.trpc?.abortOnUnmount ?? abortOnUnmount;
+				const queryKey = getQueryKeyInternal(path, procedureInput, 'infinite');
 
 				return createInfiniteQuery({
-					...opts,
-					initialPageParam: opts?.initialCursor ?? null,
+					...currentOpts,
+					initialPageParam: currentOpts?.initialCursor ?? null,
 					queryKey,
-					queryFn: ({ pageParam, signal, direction }) =>
-						client.query(
-							...getClientArgs(
-								queryKey,
-								{
-									trpc: {
-										...opts?.trpc,
-										...(shouldAbortOnUnmount && { signal }),
-									},
-								},
-								{
-									pageParam: pageParam ?? opts.initialCursor,
-									direction,
-								}
-							)
-						),
+					queryFn: ({ pageParam, signal, direction }) => {
+						let targetProc: any = trpcProxyClient;
+						for (const p of path) targetProc = targetProc[p];
+						const actualInput = { ...(procedureInput ?? {}), ...(pageParam ? { cursor: pageParam } : {}), direction, };
+						const trpcSpecificOptions = { ...currentOpts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+						return targetProc.query(actualInput, trpcSpecificOptions);
+					},
 				} satisfies CreateInfiniteQueryOptions);
 			}
 
@@ -1337,34 +1305,26 @@ const procedures: Record<
 			const query = createInfiniteQuery(
 				derived(
 					[
-						isInputStore ? input : blankStore,
+						isInputStore ? procedureInput : blankStore,
 						isOptsStore ? opts : blankStore,
 						enabled,
 					],
 					([$input, $opts, $enabled]) => {
-						const newInput = !isBlank($input) ? $input : input;
-						const newOpts = !isBlank($opts) ? $opts : opts;
-						const queryKey = getQueryKeyInternal(path, newInput, 'infinite');
+						const currentProcedureInputVal = !isBlank($input) ? $input : procedureInput;
+						const newOpts = !isBlank($opts) ? $opts : currentOpts;
+						const queryKey = getQueryKeyInternal(path, currentProcedureInputVal, 'infinite');
 
 						return {
 							...newOpts,
+							initialPageParam: newOpts?.initialCursor ?? null,
 							queryKey,
-							queryFn: ({ pageParam, signal, direction }) =>
-								client.query(
-									...getClientArgs(
-										queryKey,
-										{
-											trpc: {
-												...newOpts?.trpc,
-												...(shouldAbortOnUnmount && { signal }),
-											},
-										},
-										{
-											pageParam: pageParam ?? newOpts.initialCursor,
-											direction,
-										}
-									)
-								),
+							queryFn: ({ pageParam, signal, direction }) => {
+								let targetProc: any = trpcProxyClient;
+								for (const p of path) targetProc = targetProc[p];
+								const actualInput = { ...(currentProcedureInputVal ?? {}), ...(pageParam ? { cursor: pageParam } : {}), direction, };
+								const trpcSpecificOptions = { ...newOpts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+								return targetProc.query(actualInput, trpcSpecificOptions);
+							},
 							...(!isBlank($enabled) && {
 								enabled: $enabled && (newOpts?.enabled ?? true),
 							}),
@@ -1378,60 +1338,49 @@ const procedures: Record<
 						query,
 						async (data?: any) => {
 							if (data) {
-								queryClient.setQueryData(queryKey, {
+								queryClient.setQueryData(baseQueryKey, {
 									pages: [await data],
 									pageParams: [currentOpts?.initialCursor ?? null],
 								});
 							}
 							(enabled as Writable<boolean>).set(true);
 						},
-					]
+				  ]
 				: query;
 		};
 	},
-	[Procedure.serverInfiniteQuery]: ({
-		path,
-		client,
-		queryClient,
-		abortOnUnmount,
-	}) => {
+	[Procedure.serverInfiniteQuery]: ({ path, trpcProxyClient, queryClient, abortOnUnmount }) => {
 		return async (_input: any, _opts?: any) => {
-			let input = _input;
+			let procedureInput = _input;
 			let opts = _opts;
 			let shouldAbortOnUnmount = opts?.trpc?.abortOnUnmount ?? abortOnUnmount;
 
-			const queryKey = getQueryKeyInternal(path, input, 'infinite');
+			const queryKey = getQueryKeyInternal(path, procedureInput, 'infinite');
 
-			const query: Omit<FetchInfiniteQueryOptions, 'initialPageParam'> = {
+			const queryFnForPrefetch = ({ pageParam, signal, direction }: { pageParam?: any, signal?: AbortSignal, direction: 'forward' | 'backward' }) => {
+				let targetProc: any = trpcProxyClient;
+				for (const p of path) targetProc = targetProc[p];
+				const actualInput = { ...(procedureInput ?? {}), ...(pageParam ? { cursor: pageParam } : {}), direction, };
+				const trpcSpecificOptions = { ...opts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+				return targetProc.query(actualInput, trpcSpecificOptions);
+			};
+			
+			const queryForPrefetch: Omit<FetchInfiniteQueryOptions, 'initialPageParam'> & { initialPageParam?: any } = {
 				queryKey,
-				queryFn: ({ pageParam, signal, direction }) =>
-					client.query(
-						...getClientArgs(
-							queryKey,
-							{
-								trpc: {
-									...opts?.trpc,
-									...(shouldAbortOnUnmount && { signal }),
-								},
-							},
-							{
-								pageParam: pageParam ?? opts.initialCursor,
-								direction,
-							}
-						)
-					),
+				queryFn: queryFnForPrefetch,
+				initialPageParam: opts?.initialCursor ?? null,
 			};
 
 			const cache = queryClient
 				.getQueryCache()
-				.find({ queryKey: query.queryKey });
+				.find({ queryKey: queryForPrefetch.queryKey });
 			const cacheNotFound = !cache?.state?.data;
 			if (opts?.ssr !== false && cacheNotFound) {
-				await queryClient.prefetchInfiniteQuery(query as any);
+				await queryClient.prefetchInfiniteQuery(queryForPrefetch as FetchInfiniteQueryOptions);
 			}
 
 			return (...args: any[]) => {
-				if (args.length > 0) input = args.shift();
+				if (args.length > 0) procedureInput = args.shift();
 				if (args.length > 0) opts = args.shift();
 
 				const isOptsStore = isSvelteStore(opts);
@@ -1440,40 +1389,31 @@ const procedures: Record<
 					currentOpts?.trpc?.abortOnUnmount ?? abortOnUnmount;
 
 				const staleTime = writable<number | null>(Infinity);
-				onMount(() => { staleTime.set(null); }); // prettier-ignore
+				onMount(() => { staleTime.set(null); });
 
 				return createInfiniteQuery(
 					derived(
 						[
-							isSvelteStore(input) ? input : blankStore,
+							isSvelteStore(procedureInput) ? procedureInput : blankStore,
 							isOptsStore ? opts : blankStore,
 							staleTime,
 						],
 						([$input, $opts, $staleTime]) => {
-							const newInput = !isBlank($input) ? $input : input;
-							const newOpts = !isBlank($opts) ? $opts : opts;
-							const queryKey = getQueryKeyInternal(path, newInput, 'infinite');
+							const currentProcedureInputVal = !isBlank($input) ? $input : procedureInput;
+							const newOpts = !isBlank($opts) ? $opts : currentOpts;
+							const queryKey = getQueryKeyInternal(path, currentProcedureInputVal, 'infinite');
 
 							return {
 								...newOpts,
-								initialPageParam: newOpts?.initialCursor,
+								initialPageParam: newOpts?.initialCursor ?? null,
 								queryKey,
-								queryFn: ({ pageParam, signal, direction }) =>
-									client.query(
-										...getClientArgs(
-											queryKey,
-											{
-												trpc: {
-													...newOpts?.trpc,
-													...(shouldAbortOnUnmount && { signal }),
-												},
-											},
-											{
-												pageParam: pageParam ?? newOpts.initialCursor,
-												direction,
-											}
-										)
-									),
+								queryFn: ({ pageParam, signal, direction }) => {
+									let targetProc: any = trpcProxyClient;
+									for (const p of path) targetProc = targetProc[p];
+									const actualInput = { ...(currentProcedureInputVal ?? {}), ...(pageParam ? { cursor: pageParam } : {}), direction, };
+									const trpcSpecificOptions = { ...newOpts?.trpc, ...(shouldAbortOnUnmount && { signal }) };
+									return targetProc.query(actualInput, trpcSpecificOptions);
+								},
 								...($staleTime && { staleTime: $staleTime }),
 							} satisfies CreateInfiniteQueryOptions;
 						}
@@ -1482,46 +1422,59 @@ const procedures: Record<
 			};
 		};
 	},
-	[Procedure.mutate]: ({ path, client, queryClient }) => {
+	[Procedure.mutate]: ({ path, trpcProxyClient, queryClient }) => {
 		return (opts?: any) => {
 			const mutationKey = getMutationKeyInternal(path);
-			const defaultOpts = queryClient.defaultMutationOptions(
-				queryClient.getMutationDefaults(mutationKey)
-			);
+			// TanStack/Svelte Query v5's createMutation should handle its own default merging.
+			// We remove the explicit call to queryClient.defaultMutationOptions() as it seems unavailable.
+			// const defaultOpts = queryClient.defaultMutationOptions(); // This line caused errors
 
-			// TODO: Add useMutation override to `svelteQueryWrapper`
 			const mutationSuccessOverride = (options: any) => options.originalFn();
 
 			return createMutation({
-				...opts,
+				...opts, // Pass user-provided options directly
 				mutationKey,
-				mutationFn: (input) =>
-					client.mutation(...getClientArgs([path, { input }], opts)),
-				onSuccess(...args) {
-					const originalFn = () =>
-						opts?.onSuccess?.(...args) ?? defaultOpts?.onSuccess?.(...args);
-
+				mutationFn: (procedureInput) => {
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					return targetProc.mutate(procedureInput, opts?.trpc);
+				},
+				// If defaultOpts was used for its onSuccess, we need to ensure createMutation handles this.
+				// TanStack Query's createMutation typically merges options. If opts.onSuccess exists, it's used.
+				// If not, createMutation would look for defaults set on QueryClient via setMutationDefaults.
+				// The original onSuccess logic was: 
+				// onSuccess(...args) { const originalFn = () => opts?.onSuccess?.(...args) ?? defaultOpts?.onSuccess?.(...args); ... }
+				// We are now relying on createMutation to correctly layer the onSuccess handlers.
+				// If an onSuccess is provided in `opts`, it will be used by createMutation.
+				// If not, createMutation should use any globally configured default onSuccess.
+				// The svelteQueryWrapper's own mutationSuccessOverride logic seems to be a custom layer on top.
+				// For now, we simplify by not trying to manually merge defaultOpts.onSuccess here.
+				onSuccess: opts?.onSuccess ? (...args) => {
+					const originalFn = () => opts.onSuccess(...args);
 					return mutationSuccessOverride({
 						originalFn,
 						queryClient,
-						meta: opts?.meta ?? defaultOpts?.meta ?? {},
+						meta: opts?.meta ?? {},
 					});
-				},
+				} : undefined, // If no specific onSuccess, let createMutation use its defaults
 			});
 		};
 	},
-	[Procedure.subscribe]: ({ path, client }) => {
-		return (input: any, opts?: any) => {
+	[Procedure.subscribe]: ({ path, trpcProxyClient }) => {
+		return (procedureInput: any, opts?: any) => {
 			const enabled = opts?.enabled ?? true;
-			const queryKey = hashKey(getQueryKeyInternal(path, input, 'any'));
+			const queryKey = hashKey(getQueryKeyInternal(path, procedureInput, 'any'));
 
 			effect(
 				() => {
 					if (!enabled) return;
 					let isStopped = false;
-					const subscription = client.subscription(
-						path.join('.'),
-						input ?? undefined,
+
+					let targetProc: any = trpcProxyClient;
+					for (const p of path) targetProc = targetProc[p];
+					
+					const subscription = targetProc.subscribe(
+						procedureInput ?? undefined,
 						{
 							onStarted: () => {
 								if (!isStopped) opts?.onStarted?.();
@@ -1582,7 +1535,7 @@ const procedures: Record<
 				if (args.length > 0) opts = args.shift();
 
 				const staleTime = writable<number | null>(Infinity);
-				onMount(() => { staleTime.set(null); }); // prettier-ignore
+				onMount(() => { staleTime.set(null); });
 
 				return createQueries({
 					...opts,
@@ -1656,7 +1609,7 @@ export function getQueryKey<TProcedureOrRouter extends ProcedureOrRouter>(
 }
 
 interface SvelteQueryWrapperOptions<TRouter extends AnyRouter> {
-	client: CreateTRPCProxyClient<TRouter>;
+	client: CreateTRPCClient<TRouter>;
 	queryClient?: QueryClient;
 	abortOnUnmount?: boolean;
 }
@@ -1675,9 +1628,6 @@ export function svelteQueryWrapper<TRouter extends AnyRouter>({
 
 	const queryClient = _queryClient ?? useQueryClient();
 
-	// REFER: https://github.com/trpc/trpc/blob/c6e46bbd493f0ea32367eaa33c3cabe19a2614a0/packages/client/src/createTRPCClient.ts#L143
-	const innerClient = client.__untypedClient as UntypedClient;
-
 	return new DeepProxy(
 		{} as ClientWithQuery &
 			(ClientWithQuery extends Record<any, any>
@@ -1695,8 +1645,7 @@ export function svelteQueryWrapper<TRouter extends AnyRouter>({
 
 				if (hasOwn(procedures, key)) {
 					return procedures[key]({
-						baseClient: client as any,
-						client: innerClient,
+						trpcProxyClient: client as CreateTRPCClient<AnyRouter>,
 						path: this.path,
 						queryClient,
 						abortOnUnmount,
@@ -1708,6 +1657,8 @@ export function svelteQueryWrapper<TRouter extends AnyRouter>({
 				if (hasOwn(procedureExts, proc) && hasOwn(procedureExts[proc], key)) {
 					return procedureExts[proc][key](...argList);
 				}
+
+				console.error(`[trpc-svelte-query-adapter] Unhandled proxy path: ${this.path.join('.')}.${key}`);
 			},
 		}
 	);

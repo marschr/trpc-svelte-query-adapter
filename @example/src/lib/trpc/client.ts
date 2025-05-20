@@ -1,17 +1,50 @@
 import type { Router } from '$lib/trpc/router';
-import { createTRPCClient, type TRPCClientInit } from 'trpc-sveltekit';
+import { createTRPCClient, httpBatchLink, splitLink, httpSubscriptionLink } from '@trpc/client';
 import { svelteQueryWrapper } from 'trpc-svelte-query-adapter';
 import type { QueryClient } from '@tanstack/svelte-query';
+import { browser } from '$app/environment';
 
-let browserClient: ReturnType<typeof svelteQueryWrapper<Router>>;
+let browserSvelteQueryWrapperClient: ReturnType<typeof svelteQueryWrapper<Router>> | undefined;
+let rawTrpcClient: ReturnType<typeof createTRPCClient<Router>> | undefined;
 
-export function trpc(init?: TRPCClientInit, queryClient?: QueryClient) {
-	const isBrowser = typeof window !== 'undefined';
-	if (isBrowser && browserClient) return browserClient;
-	const client = svelteQueryWrapper<Router>({
-		client: createTRPCClient<Router>({ init }),
-		queryClient,
+function getTrpcClient() {
+	if (rawTrpcClient) return rawTrpcClient;
+
+	rawTrpcClient = createTRPCClient<Router>({
+		links: [
+			splitLink({
+				condition: (op) => {
+					return op.type === 'subscription';
+				},
+				true: httpSubscriptionLink({
+					url: '/api/trpc',
+				}),
+				false: httpBatchLink({
+					url: '/api/trpc',
+				}),
+			}),
+		],
 	});
-	if (isBrowser) browserClient = client;
-	return client;
+	return rawTrpcClient;
+}
+
+export { getTrpcClient as getRawTrpcClient };
+
+export function trpc(queryClient?: QueryClient) {
+	if (browser && browserSvelteQueryWrapperClient) {
+		return browserSvelteQueryWrapperClient;
+	}
+
+	const trpcClientInstance = getTrpcClient();
+
+	const wrapperClient = svelteQueryWrapper<Router>({
+		client: trpcClientInstance,
+		queryClient, // Pass the svelte-query client instance
+		// abortOnUnmount: browser, // Example: Abort requests on unmount in browser
+	});
+
+	if (browser) {
+		browserSvelteQueryWrapperClient = wrapperClient;
+	}
+	return wrapperClient;
 }

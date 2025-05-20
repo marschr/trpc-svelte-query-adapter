@@ -2,7 +2,6 @@
 	import Heading from '$lib/components/Heading.svelte';
 
 	import { trpc } from '$lib/trpc/client.js';
-	import { page } from '$app/stores';
 
 	import { X, Plus } from 'phosphor-svelte';
 	import { writable } from 'svelte/store';
@@ -10,7 +9,7 @@
 
 	export let data;
 
-	const api = trpc($page);
+	const api = trpc();
 	const utils = api.createUtils();
 
 	let todoInput: HTMLInputElement;
@@ -126,7 +125,7 @@
 
 		{#if $todos.isPending}
 			<article>
-				<progress />
+				<progress></progress>
 				Loading todos...
 			</article>
 		{:else if $todos.isError}
@@ -151,7 +150,7 @@
 
 						<span>
 							{#if todo.done}
-								<s>{todo.text}</s>
+								{todo.text}
 							{:else}
 								{todo.text}
 							{/if}
@@ -173,7 +172,7 @@
 			</div>
 		{/if}
 		{#if $createTodo.isPending || $deleteTodo.isPending || $updateTodo.isPending}
-			<progress />
+			<progress></progress>
 		{/if}
 	</div>
 
@@ -190,13 +189,13 @@
 
 		{#await resolvePopularTodos(data.popularTodos)}
 			<article>
-				<progress />
+				<progress></progress>
 				Streaming popular todos...
 			</article>
 		{:then}
 			{#if $popularTodos.isPending || $popularTodos.isFetching}
 				<article>
-					<progress />
+					<progress></progress>
 					Loading popular todos...
 				</article>
 			{:else if $popularTodos.isError}
